@@ -1,0 +1,162 @@
+
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Scanner QR - Dramaloka</title>
+
+  <script src="https://unpkg.com/html5-qrcode"></script>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f7f3f3;
+      margin: 0;
+      padding: 24px;
+      text-align: center;
+      color: #35151f;
+    }
+
+    .container {
+      max-width: 480px;
+      margin: 30px auto;
+      background: white;
+      padding: 24px;
+      border-radius: 16px;
+      box-shadow: 0 4px 18px #0001;
+    }
+
+    h2 { color: #741f3b; }
+
+    #reader {
+      width: 100%;
+      margin: 20px auto;
+    }
+
+    button {
+      background: #741f3b;
+      color: white;
+      border: 0;
+      border-radius: 8px;
+      padding: 13px 22px;
+      font-size: 16px;
+      cursor: pointer;
+      margin: 5px;
+    }
+
+    button:disabled {
+      opacity: .5;
+      cursor: not-allowed;
+    }
+
+    #status {
+      margin-top: 16px;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <h2>Scanner QR Dramaloka</h2>
+    <p>Arahkan kamera ke QR Code tiket.</p>
+
+    <div id="reader"></div>
+
+    <button id="startBtn" onclick="startScanner()">
+      Mulai Scan
+    </button>
+
+    <button id="stopBtn" onclick="stopScanner()" disabled>
+      Hentikan
+    </button>
+
+    <div id="status">
+      Tekan Mulai Scan untuk mengaktifkan kamera.
+    </div>
+  </div>
+
+  <script>
+    let scanner = null;
+    let scanning = false;
+    let processing = false;
+
+    function setStatus(message) {
+      document.getElementById('status').textContent = message;
+    }
+
+    async function startScanner() {
+      if (scanning) return;
+
+      try {
+        if (!scanner) {
+          scanner = new Html5Qrcode("reader");
+        }
+
+        const cameras = await Html5Qrcode.getCameras();
+
+        if (!cameras.length) {
+          throw new Error("Kamera tidak ditemukan.");
+        }
+
+        const camera = cameras.find(c =>
+          /back|rear|environment/i.test(c.label)
+        ) || cameras[0];
+
+        await scanner.start(
+          camera.id,
+          {
+            fps: 10,
+            qrbox: { width: 230, height: 230 }
+          },
+          async (decodedText) => {
+            if (processing) return;
+            processing = true;
+
+            setStatus("QR berhasil dibaca. Mengirim kode tiket...");
+
+            await stopScanner();
+
+            if (window.opener && !window.opener.closed) {
+              window.opener.postMessage({
+                type: "DRAMALOKA_QR_DECODED",
+                code: decodedText
+              }, "*");
+
+              setStatus("QR berhasil dikirim ke dashboard Admin.");
+            } else {
+              setStatus("Kode tiket: " + decodedText);
+            }
+          },
+          () => {}
+        );
+
+        scanning = true;
+        document.getElementById('startBtn').disabled = true;
+        document.getElementById('stopBtn').disabled = false;
+        setStatus("Kamera aktif. Silakan scan QR tiket.");
+
+      } catch (error) {
+        setStatus("Gagal membuka kamera: " + error.message);
+      }
+    }
+
+    async function stopScanner() {
+      if (scanner && scanning) {
+        try {
+          await scanner.stop();
+          await scanner.clear();
+        } catch (error) {
+          console.log(error);
+        }
+      }
+
+      scanning = false;
+      document.getElementById('startBtn').disabled = false;
+      document.getElementById('stopBtn').disabled = true;
+    }
+  </script>
+</body>
+</html>
